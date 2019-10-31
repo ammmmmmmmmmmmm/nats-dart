@@ -79,7 +79,7 @@ class NatsClient {
     });
   }
 
-  void destroy() async{
+  Future destroy() async{
 
     await _socket.close();
     _socket.destroy();
