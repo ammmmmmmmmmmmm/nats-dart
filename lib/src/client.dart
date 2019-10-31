@@ -67,10 +67,17 @@ class NatsClient {
       onConnect();
     }
     _protocolHandler = ProtocolHandler(socket: _socket, log: log);
+    var tempData = "";
     utf8.decoder.bind(_socket).listen((data) {
-      _serverPushString(data,
+      if(data.startsWith(OK)) {
+        _serverPushString(data,
           connectionOptions: connectionOptions,
           onClusterupdate: onClusterupdate);
+          tempData = "";
+      }else {
+        tempData += data;
+      }
+     
     }, onDone: () {
       log.info("Host down. Switching to next available host in cluster");
       _removeCurrentHostFromServerInfo(_currentHost, _currentPort);
