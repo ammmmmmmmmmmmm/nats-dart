@@ -79,6 +79,13 @@ class NatsClient {
     });
   }
 
+  void destroy() async{
+
+    await _socket.close();
+    _socket.destroy();
+
+  }
+
   void _removeCurrentHostFromServerInfo(String host, int port) =>
       _serverInfo.serverUrls.removeWhere((url) => url == "$host:$port");
 
