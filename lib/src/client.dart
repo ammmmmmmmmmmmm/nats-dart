@@ -69,13 +69,13 @@ class NatsClient {
     _protocolHandler = ProtocolHandler(socket: _socket, log: log);
     var tempData = "";
     utf8.decoder.bind(_socket).listen((data) {
-      if(data.startsWith(OK)) {
-        _serverPushString(data,
+      print('接收到的data: $data');
+      tempData += data;
+      if(data.startsWith(OK) || data.endsWith("\r\n")) {
+        _serverPushString(tempData,
           connectionOptions: connectionOptions,
           onClusterupdate: onClusterupdate);
           tempData = "";
-      }else {
-        tempData += data;
       }
      
     }, onDone: () {
