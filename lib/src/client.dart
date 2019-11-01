@@ -29,6 +29,11 @@ class NatsClient {
 
   final Logger log = Logger("NatsClient");
 
+  //message 不相等
+
+  String state = "init";
+  String _receviedMsg = "";
+
   NatsClient(String host, int port, {Level logLevel = Level.INFO}) {
     _currentHost = host;
     _currentPort = port;
@@ -67,23 +72,28 @@ class NatsClient {
       onConnect();
     }
     _protocolHandler = ProtocolHandler(socket: _socket, log: log);
-    var tempData = "";
+    
     utf8.decoder.bind(_socket).listen((data) {
-      print('接收到的data: $data');
-      tempData += data;
-      if(data.startsWith(OK) || data.endsWith("\r\n")) {
-        _serverPushString(tempData,
+        // print("socket_start: ${data.startsWith(MSG)}");
+        if(!data.startsWith(MSG) && state != 'wait'){
+          // print("socket_start condition: ${data}");
+          data.split(CR_LF).forEach((f)=>_serverPushString(f,
+          connectionOptions: connectionOptions,
+          onClusterupdate: onClusterupdate));
+        }else {
+          // print("socket:${data.length}");
+          _serverPushString(data,
           connectionOptions: connectionOptions,
           onClusterupdate: onClusterupdate);
-          tempData = "";
-      }
-     
+        }
+      
     }, onDone: () {
       log.info("Host down. Switching to next available host in cluster");
       _removeCurrentHostFromServerInfo(_currentHost, _currentPort);
       _reconnectToNextAvailableInCluster(
           opts: connectionOptions, onClusterupdate: onClusterupdate);
     });
+
   }
 
   Future destroy() async{
@@ -139,6 +149,7 @@ class NatsClient {
   void _serverPushString(String serverPushString,
       {ConnectionOptions connectionOptions,
       void onClusterupdate(ServerInfo info)}) {
+
     if (serverPushString.startsWith(INFO)) {
       _setServerInfo(serverPushString.replaceFirst(INFO, ""),
           connectionOptions: connectionOptions);
@@ -146,13 +157,39 @@ class NatsClient {
       if (onClusterupdate != null) {
         onClusterupdate(_serverInfo);
       }
-    } else if (serverPushString.startsWith(MSG)) {
-      _convertToMessages(serverPushString)
-          .forEach((msg) => _messagesController.add(msg));
-    } else if (serverPushString.startsWith(PING)) {
+    }  else if (serverPushString.startsWith(PING)) {
       _protocolHandler.sendPong();
     } else if (serverPushString.startsWith(OK)) {
       log.fine("Received server OK");
+    }else  if(serverPushString.startsWith(MSG) || state == 'wait'){
+
+            // print('revice:${serverPushString.length}');
+            //解决残缺数据
+            if(state == 'wait'  && serverPushString.split(CR_LF).length > 1) {
+              // print('解决粘包 : ${serverPushString.split(CR_LF).length}  ${serverPushString.split(CR_LF)[1]}');
+              serverPushString.split(CR_LF).forEach((m)=>_serverPushString(m));
+            }else {
+
+            serverPushString = _receviedMsg + serverPushString;
+            var msgArr = serverPushString.split(CR_LF);
+            var header = msgArr[0];
+            var payload = msgArr.length > 1 ?  msgArr[1] : ""; //接收到的payload长度
+
+            int bytsLength = int.parse(header.split(" ").last);  
+
+             if (bytsLength == payload.length) {
+              state = "init";
+              _receviedMsg = "";
+            _convertToMessages(serverPushString)
+           .forEach((msg) => _messagesController.add(msg));
+
+          }else {
+            this.state = 'wait';
+            _receviedMsg =  serverPushString;  
+          } 
+        }
+      // _convertToMessages(serverPushString)
+      //     .forEach((msg) => _messagesController.add(msg));
     }
   }
 
