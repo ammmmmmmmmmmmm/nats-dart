@@ -185,7 +185,10 @@ class NatsClient {
 
           }else {
             this.state = 'wait';
-            _receviedMsg =  serverPushString;  
+            var msgArr = serverPushString.split(CR_LF);
+            var header = msgArr[0];
+            var payload = msgArr.length > 1 ?  msgArr[1] : ""; 
+            _receviedMsg =  '$header$CR_LF$payload';    
           } 
         }
       // _convertToMessages(serverPushString)
