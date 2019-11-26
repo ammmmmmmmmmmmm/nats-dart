@@ -1,3 +1,4 @@
+
 import 'constants.dart';
 import 'tcp_client.dart';
 import 'server_info.dart';
@@ -12,12 +13,31 @@ import 'dart:async';
 
 import 'package:logging/logging.dart';
 
+typedef ClusterupdateCallBack = void Function(ServerInfo info);
 class NatsClient {
   String _currentHost;
   int _currentPort;
 
   String get currentHost => _currentHost;
   int get currentPort => _currentPort;
+
+  //nats 连接配置
+  ConnectionOptions connectionOptions;
+
+  
+  //
+  ClusterupdateCallBack onClusterupdate;
+
+  //socket 关闭
+  bool _closed = false;
+
+  //socket 已连接
+  bool _connected = false;
+
+  int maxPingCount = 10000;
+  
+
+  Timer _heartbeat;
 
   Socket _socket;
   TcpClient tcpClient;
@@ -28,6 +48,7 @@ class NatsClient {
   ProtocolHandler _protocolHandler;
 
   final Logger log = Logger("NatsClient");
+
 
   //message 不相等
 
@@ -67,14 +88,26 @@ class NatsClient {
       {ConnectionOptions connectionOptions,
       void onConnect(),
       void onClusterupdate(ServerInfo info)}) async {
+
     _socket = await tcpClient.connect();
     if (onConnect != null) {
       onConnect();
     }
+    
+    log.info("connected $currentHost");
+
+    _connected = true;
+    _closed = false;
+
     _protocolHandler = ProtocolHandler(socket: _socket, log: log);
     
+    _bindSocket();
+  }
+
+  void _bindSocket() {
+
     utf8.decoder.bind(_socket).listen((data) {
-        // print("socket_start: ${data.startsWith(MSG)}");
+         print("接收到socket消息：$data");
         if(!data.startsWith(MSG) && state != 'wait'){
           // print("socket_start condition: ${data}");
           data.split(CR_LF).forEach((f)=>_serverPushString(f,
@@ -88,27 +121,74 @@ class NatsClient {
         }
       
     }, onDone: () {
-      log.info("Host down. Switching to next available host in cluster");
-      _removeCurrentHostFromServerInfo(_currentHost, _currentPort);
-      _reconnectToNextAvailableInCluster(
-          opts: connectionOptions, onClusterupdate: onClusterupdate);
+
+      log.info("Host done");
+      //尝试重连
+      this._connected = false;
+      if (!_closed) {
+      this.scheduleHeartbeat();
+      }
+      // _removeCurrentHostFromServerInfo(_currentHost, _currentPort);
+      // _reconnectToNextAvailableInCluster(
+      //     opts: connectionOptions, onClusterupdate: onClusterupdate);
+
+
+    },onError: (error){
+      print('接收到socketError');
+    },cancelOnError: false);
+
+  }
+
+
+
+  void scheduleHeartbeat() {
+
+   _heartbeat?.cancel(); 
+    int pingCount = 0;
+    log.info("scheduleHeartbeat $currentHost");
+   _heartbeat =  Timer.periodic(Duration(seconds: 1), (timer){
+        log.info("reconnecting $currentHost");
+     if (!this._connected && pingCount < this.maxPingCount) {
+       this._reconnect();
+       pingCount ++;
+     }else {
+        _heartbeat.cancel();
+     }
     });
 
   }
 
   Future destroy() async{
 
+    _closed = true;
     await _socket.close();
     _socket.destroy();
 
   }
 
+  void _reconnect() async{
+
+    bool isIPv6Address(String url) => url.contains("[") && url.contains("]");
+    tcpClient = _createTcpClient("$currentHost:$currentPort", isIPv6Address);
+
+    try {
+        await connect(
+            connectionOptions: connectionOptions, onClusterupdate: onClusterupdate);
+        log.info("Successfully reconnected to $currentHost now");
+        _carryOverSubscriptions();
+      } catch (ex) {
+        log.fine("reconnect err $ex");
+      }  
+  }
+
   void _removeCurrentHostFromServerInfo(String host, int port) =>
       _serverInfo.serverUrls.removeWhere((url) => url == "$host:$port");
 
+
+
   void _reconnectToNextAvailableInCluster(
       {ConnectionOptions opts, void onClusterupdate(ServerInfo info)}) async {
-    var urls = _serverInfo.serverUrls;
+    var urls = _serverInfo.serverUrls ?? [];
     bool isIPv6Address(String url) => url.contains("[") && url.contains("]");
     for (var url in urls) {
       tcpClient = _createTcpClient(url, isIPv6Address);
@@ -117,6 +197,8 @@ class NatsClient {
             connectionOptions: opts, onClusterupdate: onClusterupdate);
         log.info("Successfully switched client to $url now");
         _carryOverSubscriptions();
+        _connected = true;
+        _closed = false;
         break;
       } catch (ex) {
         log.fine("Tried connecting to $url but failed. Moving on");
@@ -208,6 +290,8 @@ class NatsClient {
       _serverInfo.port = map["port"];
       _serverInfo.maxPayload = map["max_payload"];
       _serverInfo.clientId = map["client_id"];
+      _serverInfo.serverUrls = ["127.0.0.1:5222"];
+      print(map);
       try {
         if (map["connect_urls"] != null) {
           _serverInfo.serverUrls = map["connect_urls"].cast<String>();
