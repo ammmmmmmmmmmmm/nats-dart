@@ -16,14 +16,14 @@ void main() {
 
   final mockSocket = MockSocket();
   final mockTcpClient = MockTcpClient();
-  NatsClient client;
+  late NatsClient client;
 
   setUp(() async {
     client = NatsClient("localhost", 4223, logLevel: Level.ALL);
   });
 
   test("Connect call succeeeds", () async {
-    when(mockSocket.transform(any)).thenAnswer(
+    when(mockSocket.transform(any!)).thenAnswer(
         (_) => Stream<String>.fromIterable([INFO_MSG, DATA_MSG, PING]));
     when(mockTcpClient.connect()).thenAnswer((_) => Future.value(mockSocket));
     client.tcpClient = mockTcpClient;

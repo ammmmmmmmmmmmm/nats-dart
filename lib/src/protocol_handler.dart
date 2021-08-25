@@ -4,21 +4,21 @@ import 'connection_options.dart';
 import 'package:logging/logging.dart';
 
 class ProtocolHandler {
-  final Socket socket;
-  final Logger log;
+  final Socket? socket;
+  final Logger? log;
 
   ProtocolHandler({this.socket, this.log});
 
-  void connect({ConnectionOptions opts}) {
+  void connect({required ConnectionOptions opts}) {
     var messageBuffer = CONNECT +
         "{\"verbose\":${opts.verbose},\"pedantic\":${opts.pedantic},\"tls_required\":${opts.tlsRequired},\"name\":${opts.name},\"lang\":${opts.language},\"version\":${opts.version},\"protocol\":${opts.protocol}, \"user\":${opts.userName}, \"pass\":${opts.password}}" +
         CR_LF;
-    socket.write(messageBuffer);
+    socket!.write(messageBuffer);
   }
 
   void pubish(
       String message, String subject, void onDone(), void onError(Exception ex),
-      {String replyTo}) {
+      {String? replyTo}) {
     String messageBuffer;
 
     int length = message.length;
@@ -29,16 +29,16 @@ class ProtocolHandler {
       messageBuffer = "$PUB $subject $length $CR_LF$message$CR_LF";
     }
     try {
-      socket.write(messageBuffer);
+      socket!.write(messageBuffer);
       onDone();
     } catch (ex) {
-      log.severe(ex);
+      log!.severe(ex);
     }
   }
 
-  void subscribe(String subscriberId, String subject, void onDone(),
+  void subscribe(String? subscriberId, String? subject, void onDone(),
       void onError(Exception ex),
-      {String queueGroup}) {
+      {String? queueGroup}) {
     String messageBuffer;
 
     if (queueGroup != null) {
@@ -48,15 +48,17 @@ class ProtocolHandler {
     }
 
     try {
-      socket.write(messageBuffer);
+      socket!.write(messageBuffer);
       onDone();
-    } catch (ex) {
-      log.severe("Error while creating subscription $ex");
+    } on Exception catch (ex) {
+      log!.severe("Error while creating subscription $ex");
       onError(ex);
+    } catch (ex) {
+      onError(SocketException(ex.toString()));
     }
   }
 
-  void unsubscribe(String subscriberId, int waitUntilMessageCount,
+  void unsubscribe(String subscriberId, int? waitUntilMessageCount,
       void onDone(), void onError(Exception ex)) {
     String messageBuffer;
 
@@ -67,19 +69,21 @@ class ProtocolHandler {
     }
 
     try {
-      socket.write(messageBuffer);
+      socket!.write(messageBuffer);
       onDone();
-    } catch (ex) {
-      log.severe("Error while unsubscribing $subscriberId");
+    } on Exception catch (ex) {
+      log!.severe("Error while unsubscribing $subscriberId");
       onError(ex);
+    } catch (ex) {
+      onError(SocketException(ex.toString()));
     }
   }
 
   void sendPong() {
-    socket.write("$PONG$CR_LF");
+    socket!.write("$PONG$CR_LF");
   }
 
   void sendPing() {
-    socket.write("$PING$CR_LF");
+    socket!.write("$PING$CR_LF");
   }
 }
